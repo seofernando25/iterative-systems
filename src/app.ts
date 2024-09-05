@@ -86,7 +86,6 @@ export class App extends LitElement {
                         text: "Infected/Recovered",
                     },
                     suggestedMin: 0,
-                    suggestedMax: 200,
                 },
             },
         },
