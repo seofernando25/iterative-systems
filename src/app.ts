@@ -1,11 +1,8 @@
-import { css, html, LitElement, PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import "./katex-expr";
-
 import { Chart, ChartConfiguration } from "chart.js";
 import { createRef, Ref, ref } from "lit/directives/ref.js";
 import { isDenseMatrix, matrix, multiply, pow } from "mathjs";
-
 import {
     CategoryScale,
     LinearScale,
@@ -14,6 +11,8 @@ import {
     PointElement,
     Tooltip,
 } from "chart.js";
+import { LitElement, PropertyValues, html, css } from "lit";
+
 Chart.register(CategoryScale);
 Chart.register(LinearScale);
 Chart.register(LineController);
