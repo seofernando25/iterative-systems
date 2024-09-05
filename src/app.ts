@@ -34,10 +34,11 @@ export class App extends LitElement {
     initialInfected = 1;
 
     @state()
-    initialRecovered = 100;
+    initialHealthy = 100;
 
     chartjsElementRef: Ref<HTMLCanvasElement> = createRef();
-    chart?: Chart = undefined;
+    // @ts-expect-error
+    chart: Chart;
 
     @state()
     days = MAX_DAYS / 2;
@@ -45,7 +46,6 @@ export class App extends LitElement {
     chartConfig: ChartConfiguration = {
         type: "line",
         data: {
-            labels: Array.from({ length: 1 + this.days }, (_, i) => String(i)),
             datasets: [
                 {
                     label: "Infected",
@@ -154,26 +154,25 @@ export class App extends LitElement {
         ]);
         const transitionMatrixPowered = pow(transitionMatrix, day);
         const initialStateMatrix = matrix([
-            this.initialRecovered,
+            this.initialHealthy,
             this.initialInfected,
         ]);
         const finalStateMatrix = multiply(
             transitionMatrixPowered,
             initialStateMatrix
         );
-
-        const infected = finalStateMatrix.get([0]);
-        const recovered = finalStateMatrix.get([1]);
+        const recovered = finalStateMatrix.get([0]);
+        const infected = finalStateMatrix.get([1]);
 
         // infected + recovered = 100
-        const expectedTotal = this.initialInfected + this.initialRecovered;
+        const expectedTotal = this.initialInfected + this.initialHealthy;
         const total = infected + recovered;
         const diff = total - expectedTotal;
         if (Math.abs(diff) > 0.1) {
             throw new Error(`Total is not 100: ${total}`);
         }
 
-        return [recovered, infected];
+        return { infected, recovered };
     }
 
     render() {
@@ -211,13 +210,13 @@ export class App extends LitElement {
                 },
             },
             {
-                label: "Initial Recovered",
+                label: "Initial Healthy",
                 min: 0,
                 max: 100,
                 step: 1,
-                value: this.initialRecovered,
+                value: this.initialHealthy,
                 onChange: (n: number) => {
-                    this.initialRecovered = n;
+                    this.initialHealthy = n;
                 },
             },
             {
@@ -292,20 +291,17 @@ export class App extends LitElement {
                 );
             }
         );
+        this.chart.data.labels = Array.from({ length: 1 + this.days }, (_, i) =>
+            String(i)
+        );
 
-        const infectedData = infectionsGroups.map((v) => v[0]);
-        const recoveredData = infectionsGroups.map((v) => v[1]);
-
-        if (this.chart) {
-            this.chart.data.labels = Array.from(
-                { length: 1 + this.days },
-                (_, i) => String(i)
-            );
-
-            this.chart.data.datasets[0].data = infectedData;
-            this.chart.data.datasets[1].data = recoveredData;
-            this.chart.update();
-        }
+        this.chart.data.datasets[0].data = infectionsGroups.map(
+            (v) => v.infected
+        );
+        this.chart.data.datasets[1].data = infectionsGroups.map(
+            (v) => v.recovered
+        );
+        this.chart.update();
     }
 
     static styles = css`
@@ -321,17 +317,20 @@ export class App extends LitElement {
                 width: 100%;
             }
         }
-        tr > td:first-child {
-            text-align: left;
-            width: 20%;
-        }
 
-        tr > td:nth-child(2) {
-            width: 75%;
-        }
+        tr {
+            td:first-child {
+                text-align: left;
+                width: 20%;
+            }
 
-        tr > td:last-child {
-            width: 5%;
+            td:nth-child(2) {
+                width: 70%;
+            }
+
+            td:last-child {
+                width: 10%;
+            }
         }
 
         .chart-wrapper {
