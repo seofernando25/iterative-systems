@@ -2,7 +2,7 @@ import { customElement, state } from "lit/decorators.js";
 import "./katex-expr";
 import { Chart, ChartConfiguration } from "chart.js";
 import { createRef, Ref, ref } from "lit/directives/ref.js";
-import { isDenseMatrix, matrix, multiply, pow } from "mathjs";
+import { isDenseMatrix, matrix, multiply, pow, transpose } from "mathjs";
 import {
     CategoryScale,
     LinearScale,
@@ -20,7 +20,7 @@ Chart.register(PointElement);
 Chart.register(LineElement);
 Chart.register(Tooltip);
 
-const MAX_DAYS = 10;
+const MAX_DAYS = 32;
 
 @customElement("app-el")
 export class App extends LitElement {
@@ -39,10 +39,13 @@ export class App extends LitElement {
     chartjsElementRef: Ref<HTMLCanvasElement> = createRef();
     chart?: Chart = undefined;
 
+    @state()
+    days = MAX_DAYS / 2;
+
     chartConfig: ChartConfiguration = {
         type: "line",
         data: {
-            labels: Array.from({ length: 1 + MAX_DAYS }, (_, i) => String(i)),
+            labels: Array.from({ length: 1 + this.days }, (_, i) => String(i)),
             datasets: [
                 {
                     label: "Infected",
@@ -129,17 +132,14 @@ export class App extends LitElement {
 
         return String.raw`
         \begin{bmatrix}
-        ${notInfectedPercent} & ${infectionPercent} \\
-        ${notRecoveredPercent} & ${recoveryPercent}
+        ${notInfectedPercent} & ${recoveryPercent} \\
+        ${infectionPercent} & ${notRecoveredPercent}
         \end{bmatrix}^n
-
         \begin{bmatrix}
         x \\
         y
         \end{bmatrix}
-
         =
-
         \begin{bmatrix}
         x' \\
         y'
@@ -147,27 +147,91 @@ export class App extends LitElement {
         `;
     }
 
-    infectedAtDay(day: number) {
-        const chain = matrix([
-            [1 - this.infectionProbability, this.infectionProbability],
-            [this.recoveryProbability, 1 - this.recoveryProbability],
+    infectedAtDay(day: number, infectionProb: number, recoveryProb: number) {
+        const transitionMatrix = matrix([
+            [1 - infectionProb, recoveryProb],
+            [infectionProb, 1 - recoveryProb],
         ]);
+        const transitionMatrixPowered = pow(transitionMatrix, day);
+        const initialStateMatrix = matrix([
+            this.initialRecovered,
+            this.initialInfected,
+        ]);
+        const finalStateMatrix = multiply(
+            transitionMatrixPowered,
+            initialStateMatrix
+        );
 
-        const poweredChain = pow(chain, day);
-        if (!isDenseMatrix(poweredChain)) {
-            throw new Error("Matrix must be dense");
+        const infected = finalStateMatrix.get([0]);
+        const recovered = finalStateMatrix.get([1]);
+
+        // infected + recovered = 100
+        const expectedTotal = this.initialInfected + this.initialRecovered;
+        const total = infected + recovered;
+        const diff = total - expectedTotal;
+        if (Math.abs(diff) > 0.1) {
+            throw new Error(`Total is not 100: ${total}`);
         }
 
-        const state = matrix([[this.initialInfected, this.initialRecovered]]);
-        const result = multiply(state, poweredChain);
-
-        const nInfected = result.get([0, 0]);
-        const nRecovered = result.get([0, 1]);
-
-        return [nInfected, nRecovered];
+        return [recovered, infected];
     }
 
     render() {
+        const sliders = [
+            {
+                label: "Infection Probability",
+                min: 0,
+                max: 1,
+                step: 0.01,
+                value: this.infectionProbability,
+                onChange: (n: number) => {
+                    this.infectionProbability = n;
+                },
+                style: "percent",
+            },
+            {
+                label: "Recovery Probability",
+                min: 0,
+                max: 1,
+                step: 0.01,
+                value: this.recoveryProbability,
+                onChange: (n: number) => {
+                    this.recoveryProbability = n;
+                },
+                style: "percent",
+            },
+            {
+                label: "Initial Infected",
+                min: 0,
+                max: 100,
+                step: 1,
+                value: this.initialInfected,
+                onChange: (n: number) => {
+                    this.initialInfected = n;
+                },
+            },
+            {
+                label: "Initial Recovered",
+                min: 0,
+                max: 100,
+                step: 1,
+                value: this.initialRecovered,
+                onChange: (n: number) => {
+                    this.initialRecovered = n;
+                },
+            },
+            {
+                label: "Days",
+                min: 0,
+                max: MAX_DAYS,
+                step: 1,
+                value: this.days,
+                onChange: (n: number) => {
+                    this.days = n;
+                },
+            },
+        ];
+
         return html`
             <h1>Iterative Systems: Simple Epidemic Model</h1>
             <katex-expr .expression=${this.formula()}></katex-expr>
@@ -175,122 +239,37 @@ export class App extends LitElement {
             <br />
 
             <table>
-                <tr>
-                    <td>
-                        <label for="infectionProbability"
-                            >Infection Probability</label
-                        >
-                    </td>
-                    <td>
-                        <input
-                            id="infectionProbability"
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            .value=${this.infectionProbability}
-                            @input=${(e: Event) => {
-                                const target = e.target as HTMLInputElement;
-                                this.infectionProbability = Number(
-                                    target.value
-                                );
-                            }}
-                        />
-                    </td>
-                    <td>
-                        <span
-                            >${this.infectionProbability.toLocaleString(
-                                undefined,
-                                {
-                                    style: "percent",
-                                }
-                            )}</span
-                        >
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <label for="recoveryProbability"
-                            >Recovery Probability</label
-                        >
-                    </td>
-                    <td>
-                        <input
-                            id="recoveryProbability"
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value=${this.recoveryProbability}
-                            @input=${(e: Event) => {
-                                const target = e.target as HTMLInputElement;
-                                this.recoveryProbability = Number(target.value);
-                            }}
-                        />
-                    </td>
-                    <td>
-                        <span
-                            >${this.recoveryProbability.toLocaleString(
-                                undefined,
-                                {
-                                    style: "percent",
-                                }
-                            )}</span
-                        >
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <label for="initialInfected">Initial Infected</label>
-                    </td>
-                    <td>
-                        <input
-                            id="initialInfected"
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value=${this.initialInfected}
-                            @input=${(e: Event) => {
-                                const target = e.target as HTMLInputElement;
-                                this.initialInfected = Number(target.value);
-                            }}
-                        />
-                    </td>
-                    <td>
-                        <span
-                            >${this.initialInfected.toLocaleString(
-                                undefined
-                            )}</span
-                        >
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        <label for="initialRecovered">Initial Recovered</label>
-                    </td>
-                    <td>
-                        <input
-                            id="initialRecovered"
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value=${this.initialRecovered}
-                            @input=${(e: Event) => {
-                                const target = e.target as HTMLInputElement;
-                                this.initialRecovered = Number(target.value);
-                            }}
-                        />
-                    </td>
-                    <td>
-                        <span
-                            >${this.initialRecovered.toLocaleString(
-                                undefined
-                            )}</span
-                        >
-                    </td>
-                </tr>
+                ${sliders.map(
+                    (s) => html`
+                        <tr>
+                            <td>
+                                <label for=${s.label}>${s.label}</label>
+                            </td>
+                            <td>
+                                <input
+                                    id=${s.label}
+                                    type="range"
+                                    min=${s.min}
+                                    max=${s.max}
+                                    step=${s.step}
+                                    value=${s.value}
+                                    @input=${(e: Event) => {
+                                        // @ts-expect-error
+                                        s.onChange(Number(e.target.value));
+                                    }}
+                                />
+                            </td>
+                            <td>
+                                <span
+                                    >${s.value.toLocaleString(undefined, {
+                                        // @ts-expect-error
+                                        style: s.style,
+                                    })}</span
+                                >
+                            </td>
+                        </tr>
+                    `
+                )}
             </table>
             <br />
 
@@ -303,14 +282,26 @@ export class App extends LitElement {
     protected updated(_changedProperties: PropertyValues): void {
         super.updated(_changedProperties);
 
-        const infectionsGroups = Array.from({ length: 15 }, (_, i) => {
-            return this.infectedAtDay(i); // [infected, recovered];
-        });
+        const infectionsGroups = Array.from(
+            { length: 1 + this.days },
+            (_, i) => {
+                return this.infectedAtDay(
+                    i,
+                    this.infectionProbability,
+                    this.recoveryProbability
+                );
+            }
+        );
 
         const infectedData = infectionsGroups.map((v) => v[0]);
         const recoveredData = infectionsGroups.map((v) => v[1]);
 
         if (this.chart) {
+            this.chart.data.labels = Array.from(
+                { length: 1 + this.days },
+                (_, i) => String(i)
+            );
+
             this.chart.data.datasets[0].data = infectedData;
             this.chart.data.datasets[1].data = recoveredData;
             this.chart.update();
